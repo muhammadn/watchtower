@@ -16,6 +16,7 @@ import (
 // any of the images, the associated containers are stopped and restarted with
 // the new image.
 func Update(client container.Client, params types.UpdateParams) (*metrics2.Metric, error) {
+
 	log.Debug("Checking containers for updated images")
 	metric := &metrics2.Metric{}
 	staleCount := 0

@@ -45,6 +45,7 @@ require (
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/opencontainers/runc v0.1.1 // indirect
 	github.com/prometheus/client_golang v0.9.3
+	github.com/r3labs/sse/v2 v2.3.2 // indirect
 	github.com/robfig/cron v0.0.0-20180505203441-b41be1df6967
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v0.0.7

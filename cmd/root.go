@@ -3,12 +3,13 @@ package cmd
 import (
 	"math"
 	"os"
-	"os/signal"
+	_ "os/signal"
 	"strconv"
 	"strings"
-	"syscall"
+	_ "syscall"
 	"time"
 
+        "github.com/r3labs/sse/v2"
 	apiMetrics "github.com/containrrr/watchtower/pkg/api/metrics"
 	"github.com/containrrr/watchtower/pkg/api/update"
 
@@ -20,7 +21,7 @@ import (
 	"github.com/containrrr/watchtower/pkg/metrics"
 	"github.com/containrrr/watchtower/pkg/notifications"
 	t "github.com/containrrr/watchtower/pkg/types"
-	"github.com/robfig/cron"
+	_ "github.com/robfig/cron"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/spf13/cobra"
@@ -250,8 +251,31 @@ func writeStartupMessage(c *cobra.Command, sched time.Time, filtering string) {
 	}
 }
 
+func listenSSE(filter t.Filter) {
+        sseClient := sse.NewClient("http://localhost:8080/events")
+        sseClient.EncodingBase64 = true
+
+        sseClient.Subscribe("messages", func(msg *sse.Event) {
+          // Got some data!
+          // log.Println(string(msg.Data))
+                updateParams := t.UpdateParams{
+                        Filter:         filter,
+                        Cleanup:        cleanup,
+                        NoRestart:      noRestart,
+                        Timeout:        timeout,
+                        MonitorOnly:    monitorOnly,
+                        LifecycleHooks: lifecycleHooks,
+                        RollingRestart: rollingRestart,
+                }
+                _, err := actions.Update(client, updateParams)
+                if err != nil {
+                        log.Println(err)
+                }
+        })
+}
+
 func runUpgradesOnSchedule(c *cobra.Command, filter t.Filter, filtering string) error {
-	tryLockSem := make(chan bool, 1)
+	/* tryLockSem := make(chan bool, 1)
 	tryLockSem <- true
 
 	scheduler := cron.New()
@@ -277,11 +301,12 @@ func runUpgradesOnSchedule(c *cobra.Command, filter t.Filter, filtering string) 
 
 	if err != nil {
 		return err
-	}
+	} 
 
 	writeStartupMessage(c, scheduler.Entries()[0].Schedule.Next(time.Now()), filtering)
+	
 
-	scheduler.Start()
+	scheduler.Start() 
 
 	// Graceful shut-down on SIGINT/SIGTERM
 	interrupt := make(chan os.Signal, 1)
@@ -291,7 +316,8 @@ func runUpgradesOnSchedule(c *cobra.Command, filter t.Filter, filtering string) 
 	<-interrupt
 	scheduler.Stop()
 	log.Info("Waiting for running update to be finished...")
-	<-tryLockSem
+	<-tryLockSem */
+	listenSSE(filter)
 	return nil
 }
 
