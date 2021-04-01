@@ -275,49 +275,9 @@ func listenSSE(filter t.Filter) {
 }
 
 func runUpgradesOnSchedule(c *cobra.Command, filter t.Filter, filtering string) error {
-	/* tryLockSem := make(chan bool, 1)
-	tryLockSem <- true
-
-	scheduler := cron.New()
-	err := scheduler.AddFunc(
-		scheduleSpec,
-		func() {
-			select {
-			case v := <-tryLockSem:
-				defer func() { tryLockSem <- v }()
-				metric := runUpdatesWithNotifications(filter)
-				metrics.RegisterScan(metric)
-			default:
-				// Update was skipped
-				metrics.RegisterScan(nil)
-				log.Debug("Skipped another update already running.")
-			}
-
-			nextRuns := scheduler.Entries()
-			if len(nextRuns) > 0 {
-				log.Debug("Scheduled next run: " + nextRuns[0].Next.String())
-			}
-		})
-
-	if err != nil {
-		return err
-	} 
-
-	writeStartupMessage(c, scheduler.Entries()[0].Schedule.Next(time.Now()), filtering)
-	
-
-	scheduler.Start() 
-
-	// Graceful shut-down on SIGINT/SIGTERM
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt)
-	signal.Notify(interrupt, syscall.SIGTERM)
-
-	<-interrupt
-	scheduler.Stop()
-	log.Info("Waiting for running update to be finished...")
-	<-tryLockSem */
 	listenSSE(filter)
+	t := time.Date(0001, 1, 1, 00, 00, 00, 00, time.UTC)
+        writeStartupMessage(c, t, filtering)
 	return nil
 }
 
