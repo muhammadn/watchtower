@@ -256,8 +256,6 @@ func listenSSE(filter t.Filter) {
         sseClient.EncodingBase64 = true
 
         sseClient.Subscribe("messages", func(msg *sse.Event) {
-          // Got some data!
-          // log.Println(string(msg.Data))
                 updateParams := t.UpdateParams{
                         Filter:         filter,
                         Cleanup:        cleanup,
@@ -267,17 +265,16 @@ func listenSSE(filter t.Filter) {
                         LifecycleHooks: lifecycleHooks,
                         RollingRestart: rollingRestart,
                 }
+
                 _, err := actions.Update(client, updateParams)
                 if err != nil {
-                        log.Println(err)
+                         log.Println(err)
                 }
         })
 }
 
 func runUpgradesOnSchedule(c *cobra.Command, filter t.Filter, filtering string) error {
 	listenSSE(filter)
-	t := time.Date(0001, 1, 1, 00, 00, 00, 00, time.UTC)
-        writeStartupMessage(c, t, filtering)
 	return nil
 }
 

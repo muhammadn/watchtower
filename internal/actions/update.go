@@ -43,12 +43,13 @@ func Update(client container.Client, params types.UpdateParams) (*metrics2.Metri
 			staleCheckFailed++
 			metric.Failed++
 		}
-		containers[i].Stale = stale
+	 	containers[i].Stale = stale
 
 		if stale {
 			staleCount++
 		}
 	}
+        log.Println(string(containers))
 
 	containers, err = sorter.SortByDependencies(containers)
 	metric.Scanned = len(containers)
