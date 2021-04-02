@@ -3,12 +3,14 @@ package cmd
 import (
 	"math"
 	"os"
-	"os/signal"
+	_ "os/signal"
 	"strconv"
 	"strings"
-	"syscall"
+	_ "syscall"
 	"time"
 
+        "github.com/r3labs/sse/v2"
+        "github.com/jinzhu/configor"
 	apiMetrics "github.com/containrrr/watchtower/pkg/api/metrics"
 	"github.com/containrrr/watchtower/pkg/api/update"
 
@@ -20,7 +22,7 @@ import (
 	"github.com/containrrr/watchtower/pkg/metrics"
 	"github.com/containrrr/watchtower/pkg/notifications"
 	t "github.com/containrrr/watchtower/pkg/types"
-	"github.com/robfig/cron"
+	_ "github.com/robfig/cron"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/spf13/cobra"
@@ -41,6 +43,13 @@ var (
 	// Set on build using ldflags
 	version = "v0.0.0-unknown"
 )
+
+var Config = struct {
+	Client struct {
+		Location_Id     string `default:"all"`
+                Master_Url      string `required:"true"`
+	}
+}{}
 
 var rootCmd = NewRootCommand()
 
@@ -233,12 +242,11 @@ func formatDuration(d time.Duration) string {
 
 func writeStartupMessage(c *cobra.Command, sched time.Time, filtering string) {
 	if noStartupMessage, _ := c.PersistentFlags().GetBool("no-startup-message"); !noStartupMessage {
-		schedMessage := "Running a one time update."
-		if !sched.IsZero() {
-			until := formatDuration(time.Until(sched))
-			schedMessage = "Scheduling first run: " + sched.Format("2006-01-02 15:04:05 -0700 MST") +
-				"\nNote that the first check will be performed in " + until
-		}
+                if err := configor.Load(&Config, "config.yaml"); err != nil {
+                        panic(err)
+                }
+                configor.Load(&Config, "config.yaml")
+                log.Info("Our location id: ", Config.Client.Location_Id)
 
 		notifs := "Using no notifications"
 		notifList := notifier.String()
@@ -246,52 +254,50 @@ func writeStartupMessage(c *cobra.Command, sched time.Time, filtering string) {
 			notifs = "Using notifications: " + notifList
 		}
 
-		log.Info("Watchtower ", version, "\n", notifs, "\n", filtering, "\n", schedMessage)
+		log.Info("Watchtower ", version, "\n", notifs, "\n", filtering)
 	}
 }
 
+func runUpdates(client container.Client, updateParams t.UpdateParams) {
+        _, err := actions.Update(client, updateParams)
+        if err != nil {
+                 log.Println(err)
+        }
+}
+
+func listenSSE(filter t.Filter) {
+        if err := configor.Load(&Config, "config.yaml"); err != nil {
+                panic(err)
+        }
+        configor.Load(&Config, "config.yaml")
+        sseClient := sse.NewClient(Config.Client.Master_Url)
+        sseClient.EncodingBase64 = true
+
+        sseClient.Subscribe("messages", func(msg *sse.Event) {
+                updateParams := t.UpdateParams{
+                        Filter:         filter,
+                        Cleanup:        cleanup,
+                        NoRestart:      noRestart,
+                        Timeout:        timeout,
+                        MonitorOnly:    monitorOnly,
+                        LifecycleHooks: lifecycleHooks,
+                        RollingRestart: rollingRestart,
+                }
+
+                message := string(msg.Data)
+                location := Config.Client.Location_Id 
+                
+                if (message == location || location == "all") {
+                        runUpdates(client, updateParams)
+                }
+        })
+}
+
 func runUpgradesOnSchedule(c *cobra.Command, filter t.Filter, filtering string) error {
-	tryLockSem := make(chan bool, 1)
-	tryLockSem <- true
+        t := time.Date(0001, 1, 1, 00, 00, 00, 00, time.UTC) // need cleanup removal of this
+        writeStartupMessage(c, t, filtering)
 
-	scheduler := cron.New()
-	err := scheduler.AddFunc(
-		scheduleSpec,
-		func() {
-			select {
-			case v := <-tryLockSem:
-				defer func() { tryLockSem <- v }()
-				metric := runUpdatesWithNotifications(filter)
-				metrics.RegisterScan(metric)
-			default:
-				// Update was skipped
-				metrics.RegisterScan(nil)
-				log.Debug("Skipped another update already running.")
-			}
-
-			nextRuns := scheduler.Entries()
-			if len(nextRuns) > 0 {
-				log.Debug("Scheduled next run: " + nextRuns[0].Next.String())
-			}
-		})
-
-	if err != nil {
-		return err
-	}
-
-	writeStartupMessage(c, scheduler.Entries()[0].Schedule.Next(time.Now()), filtering)
-
-	scheduler.Start()
-
-	// Graceful shut-down on SIGINT/SIGTERM
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt)
-	signal.Notify(interrupt, syscall.SIGTERM)
-
-	<-interrupt
-	scheduler.Stop()
-	log.Info("Waiting for running update to be finished...")
-	<-tryLockSem
+	listenSSE(filter)
 	return nil
 }
 
