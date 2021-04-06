@@ -62,6 +62,8 @@ type Payload struct {
       Action string `json:"action"`
       LocationId string `json:"locationId"`
       Image []actions.Image `json:"images,omitempty"`
+      ImageError string `json:"error"`
+      Logs []byte `json:"logs,omitempty"`
 }
 
 type Agent struct {
@@ -291,10 +293,36 @@ func runList() []actions.Image {
         return containers
 }
 
+func runLogs() []byte {
+        containers, err := actions.Logs()
+        if err != nil {
+                 log.Println(err)
+        }
+
+        return containers
+}
+
+func sendToUI(json []byte) {
+                timeout := 1000 * time.Millisecond
+                client := httpclient.NewClient(httpclient.WithHTTPTimeout(timeout))
+
+                headers := http.Header{}
+                headers.Set("Content-Type", "application/json")
+                body := bytes.NewReader([]byte(string(json)))
+
+                // Use the clients GET method to create and execute the request
+                _, err := client.Post(fmt.Sprintf("%s/api/v1/agents/pong", Config.Client.Ui_Url), body, headers)
+                if err != nil{
+                       log.Error(err)
+                }
+
+}
+
 func listenSSE(filter t.Filter) {
         if err := configor.Load(&Config, "config.yaml"); err != nil {
                 panic(err)
         }
+
         configor.Load(&Config, "config.yaml")
         sseClient := sse.NewClient(Config.Client.Master_Url)
         sseClient.EncodingBase64 = true
@@ -316,28 +344,38 @@ func listenSSE(filter t.Filter) {
 
                 payload := Payload{}
                 json.Unmarshal([]byte(message), &payload)
-                //log.Println(payload)
                 
-                if (payload.LocationId == location && payload.Action == "update" || location == "all") {
+                if (payload.LocationId == location || location == "all" && payload.Action == "update") {
                         runUpdates(client, updateParams)
                 }
 
-                if (ui == true && payload.LocationId == location && payload.Action == "ping" || location == "all") {
+                if (payload.LocationId == location || location == "all" && payload.Action == "ping") {
                         images := runList()
 
-                        timeout := 1000 * time.Millisecond
-                        client := httpclient.NewClient(httpclient.WithHTTPTimeout(timeout))
-                        mapD := Agent{Payload: Payload{Action: "pong", LocationId: location, Image: images}}
-                        mapB, _ := json.Marshal(mapD)
-                        headers := http.Header{}
-                        headers.Set("Content-Type", "application/json")
-                        body := bytes.NewReader([]byte(string(mapB)))
+                        var mapD Agent
+                        var mapB []byte
+                        mapD = Agent{Payload: Payload{Action: "pong", LocationId: location, ImageError: "Containers are not running"}}
+                        mapB, _ = json.Marshal(mapD)
 
-                       // Use the clients GET method to create and execute the request
-                       _, err := client.Post(fmt.Sprintf("%s/api/v1/agents/pong", Config.Client.Ui_Url), body, headers)
-                       if err != nil{
-                               log.Error(err)
-                        }               
+                        if (images != nil) {
+                                mapD = Agent{Payload: Payload{Action: "pong", LocationId: location, Image: images}}
+                                mapB, _ = json.Marshal(mapD)
+                        }
+
+                        if (ui == true) {
+                                sendToUI(mapB)
+                        }
+                }
+
+                if (payload.LocationId == location || location == "all" && payload.Action == "logs") {
+                        logs := runLogs()
+
+                        mapD := Agent{Payload: Payload{Action: "logs", LocationId: location, Logs: logs}}
+                        mapB, _ := json.Marshal(mapD)
+
+                        if (ui == true) {
+                                sendToUI(mapB)
+                        }
                 }
         })
 }
